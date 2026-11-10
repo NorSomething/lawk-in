@@ -90,6 +90,8 @@ int load_blocklist(const char *path, struct domain_list *list) {
     free(line);
     fclose(config_file_ptr);
 
+    return 0;
+
 }
 
 
@@ -101,6 +103,7 @@ int main() {
 
     for (size_t i = 0; i < list.size; i++) {
         printf("%s\n", list.domains[i]);
+        (resolve_domain(list.domains[i]));
     }
 
 

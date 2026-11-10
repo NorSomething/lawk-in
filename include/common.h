@@ -12,6 +12,7 @@ struct domain_list {
 };
 
 int load_blocklist(const char *path, struct domain_list *list);
+int resolve_domain(const char *domain);
 
 //helper
 int read_len_of_files(FILE *fp);
