@@ -99,14 +99,42 @@ int load_blocklist(const char *path, struct domain_list *list) {
 int main() {
 
     struct domain_list list;
-    load_blocklist("config/blocklist.conf", &list);
 
-    for (size_t i = 0; i < list.size; i++) {
-        printf("%s\n", list.domains[i]);
-        (resolve_domain(list.domains[i]));
+    if (load_blocklist("config/blocklist.conf", &list) != 0)
+        return 1;
+
+    char ipv4_list[32768] = "";
+    char ipv6_list[32768] = "";
+    int failed = 0;
+
+    if (firewall_init() != 0) {
+        fprintf(stderr, "Firewall initialization failed\n");
+        return 1;
     }
 
+    for (size_t i = 0; i < list.size; i++) {
+        printf("Resolving %s\n", list.domains[i]);
+        if (resolve_domain(list.domains[i], ipv4_list, sizeof(ipv4_list), ipv6_list, sizeof(ipv6_list)) != 0)
+            failed = 1;
+    }
 
-  return 0;
+    if (*ipv4_list) {
+        printf("Adding IPv4 batch: %s\n", ipv4_list);
+        if (firewall_add_ipv4(ipv4_list) != 0)
+            failed = 1;
+    }
+    if (*ipv6_list) {
+        printf("Adding IPv6 batch: %s\n", ipv6_list);
+        if (firewall_add_ipv6(ipv6_list) != 0)
+            failed = 1;
+    }
+
+    if (!*ipv4_list && !*ipv6_list)
+        fprintf(stderr, "No addresses were resolved; no firewall elements added\n");
+
+    if (failed)
+        return 1;
+    else
+        return 0;
 
 }
