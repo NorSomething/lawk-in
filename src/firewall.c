@@ -6,7 +6,7 @@
 #include "../include/common.h"
 
 //this func is ai slop cuz im too lazy to do string work in C
-int create_ruleset_string(const char *ip_list, char *output_buf, size_t max_len, int is_ipv6) {
+int create_ruleset_string(const struct address_list *ip_list, char *output_buf, size_t max_len, int is_ipv6) {
     if (!ip_list || !output_buf || max_len == 0)
         return -1;
 
@@ -16,47 +16,30 @@ int create_ruleset_string(const char *ip_list, char *output_buf, size_t max_len,
         return -1;
 
     size_t used = (size_t)written;
-    char *copy = strdup(ip_list);
-    if (!copy)
+    if (!ip_list->size)
         return -1;
-
-    int first = 1;
-    char *saveptr = NULL;
-    for (char *token = strtok_r(copy, ",", &saveptr); token; token = strtok_r(NULL, ",", &saveptr)) {
-
-        while (*token == ' ' || *token == '\t' || *token == '\n' || *token == '\r')
-            token++;
-        size_t token_len = strlen(token);
-
-        while (token_len && (token[token_len - 1] == ' ' || token[token_len - 1] == '\t' || token[token_len - 1] == '\n' || token[token_len - 1] == '\r'))
-            token[--token_len] = '\0';
-        if (!token_len)
+    for (size_t i = 0; i < ip_list->size; i++) {
+        const char *address = ip_list->addresses[i];
+        if (!address || !*address)
             continue;
-
-        int separator_len = first ? 0 : 2;
-        if (used + (size_t)separator_len + token_len + 3 > max_len) {
-            free(copy);
+        size_t token_len = strlen(address);
+        if (used + (i ? 2 : 0) + token_len + 3 > max_len)
             return -1;
-        }
-
-        if (!first) {
+        if (i) {
             output_buf[used++] = ',';
             output_buf[used++] = ' ';
         }
-
-        memcpy(output_buf + used, token, token_len);
+        memcpy(output_buf + used, address, token_len);
         used += token_len;
-        first = 0;
     }
-    free(copy);
-
-    if (first || used + 3 > max_len)
+    if (used == (size_t)written || used + 3 > max_len)
         return -1;
     memcpy(output_buf + used, " }", 3);
     return 0;
 }
 
 static int run_nft_command(const char *command) {
+
     struct nft_ctx *ctx = nft_ctx_new(NFT_CTX_DEFAULT);
     if (!ctx)
         return -1;
@@ -87,11 +70,16 @@ int firewall_init(void) {
     return run_nft_command(setup_cmds);
 }
 
-static int firewall_add_addresses(const char *address_list, int is_ipv6) {
-    if (!address_list || !*address_list)
+static int firewall_add_addresses(const struct address_list *address_list, int is_ipv6) {
+
+    if (!address_list || !address_list->size)
         return -1;
 
-    size_t command_size = strlen(address_list) + 96;
+    size_t command_size = 96;
+    for (size_t i = 0; i < address_list->size; i++) {
+        command_size += strlen(address_list->addresses[i]) + 2;
+    }
+
     char *command = malloc(command_size);
     if (!command)
         return -1;
@@ -99,14 +87,16 @@ static int firewall_add_addresses(const char *address_list, int is_ipv6) {
     int result = create_ruleset_string(address_list, command, command_size, is_ipv6);
     if (result == 0)
         result = run_nft_command(command);
+
     free(command);
+
     return result;
 }
 
-int firewall_add_ipv4(const char *address_list) {
+int firewall_add_ipv4(const struct address_list *address_list) {
     return firewall_add_addresses(address_list, 0);
 }
 
-int firewall_add_ipv6(const char *address_list) {
+int firewall_add_ipv6(const struct address_list *address_list) {
     return firewall_add_addresses(address_list, 1);
 }

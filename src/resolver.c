@@ -1,56 +1,51 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 
 #include "../include/common.h"
 
-static int append_address(char *list, size_t capacity, const char *address) {
-    size_t address_len = strlen(address);
-    size_t used = strlen(list);
-
-    const char *entry = list;
-    while (*entry) {
-        const char *end = strchr(entry, ',');
-        size_t entry_len;
-
-        if (end) {
-            entry_len = (size_t)(end - entry);
-        }
-
-        else {
-            entry_len = strlen(entry);
-        }
-
-        if (entry_len == address_len && memcmp(entry, address, address_len) == 0)
+static int append_address(struct address_list *list, const char *address) {
+    for (size_t i = 0; i < list->size; i++) {
+        if (strcmp(list->addresses[i], address) == 0)
             return 0;
-
-        if (!end)
-            break;
-
-        entry = end + 1;
     }
 
-    size_t separator_len;
-    if (used) {
-        separator_len = 1;
-    }
-    else {
-        separator_len = 0;
+    if (list->size == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2 : 8;
+        char **addresses = realloc(list->addresses, capacity * sizeof(*addresses));
+        if (!addresses)
+            return -1;
+        list->addresses = addresses;
+        list->capacity = capacity;
     }
 
-    if (used + separator_len + address_len + 1 > capacity)
+    char *copy = strdup(address);
+    if (!copy)
         return -1;
-    if (separator_len)
-        list[used++] = ',';
-    memcpy(list + used, address, address_len + 1);
+    list->addresses[list->size++] = copy;
     return 0;
 }
 
-int resolve_domain(const char *domain, char *ipv4_list, size_t ipv4_capacity, char *ipv6_list, size_t ipv6_capacity) {
+void address_list_free(struct address_list *list) {
+    if (!list)
+        return;
 
-    if (!domain || !ipv4_list || !ipv6_list || !ipv4_capacity || !ipv6_capacity)
+    for (size_t i = 0; i < list->size; i++)
+        free(list->addresses[i]);
+
+    free(list->addresses);
+
+    list->addresses = NULL;
+    list->size = 0;
+    list->capacity = 0;
+}
+
+int resolve_domain(const char *domain, struct address_list *ipv4_list, struct address_list *ipv6_list) {
+
+    if (!domain || !ipv4_list || !ipv6_list)
         return -1;
 
     struct addrinfo hints = {0};
@@ -67,28 +62,23 @@ int resolve_domain(const char *domain, char *ipv4_list, size_t ipv4_capacity, ch
     for (const struct addrinfo *entry = results; entry; entry = entry->ai_next) {
 
         const void *address = NULL;
+        struct address_list *list = NULL;
         char address_text[INET6_ADDRSTRLEN];
-        char *list = NULL;
-        size_t capacity = 0;
 
         if (entry->ai_family == AF_INET) {
             address = &((const struct sockaddr_in *)entry->ai_addr)->sin_addr;
             list = ipv4_list;
-            capacity = ipv4_capacity;
         }
-
         else if (entry->ai_family == AF_INET6) {
             address = &((const struct sockaddr_in6 *)entry->ai_addr)->sin6_addr;
             list = ipv6_list;
-            capacity = ipv6_capacity;
         }
-
         else {
             continue;
         }
 
         if (!inet_ntop(entry->ai_family, address, address_text, sizeof(address_text)) ||
-            append_address(list, capacity, address_text) != 0) {
+            append_address(list, address_text) != 0) {
             fprintf(stderr, "Could not store resolved address for %s\n", domain);
             result = -1;
             break;

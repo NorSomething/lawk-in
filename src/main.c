@@ -103,8 +103,8 @@ int main() {
     if (load_blocklist("config/blocklist.conf", &list) != 0)
         return 1;
 
-    char ipv4_list[32768] = "";
-    char ipv6_list[32768] = "";
+    struct address_list ipv4_list = {0};
+    struct address_list ipv6_list = {0};
     int failed = 0;
 
     if (firewall_init() != 0) {
@@ -114,24 +114,26 @@ int main() {
 
     for (size_t i = 0; i < list.size; i++) {
         printf("Resolving %s\n", list.domains[i]);
-        if (resolve_domain(list.domains[i], ipv4_list, sizeof(ipv4_list), ipv6_list, sizeof(ipv6_list)) != 0)
+        if (resolve_domain(list.domains[i], &ipv4_list, &ipv6_list) != 0)
             failed = 1;
     }
 
-    if (*ipv4_list) {
-        printf("Adding IPv4 batch: %s\n", ipv4_list);
-        if (firewall_add_ipv4(ipv4_list) != 0)
+    if (ipv4_list.size) {
+        printf("Adding IPv4 batch: %zu addresses\n", ipv4_list.size);
+        if (firewall_add_ipv4(&ipv4_list) != 0)
             failed = 1;
     }
-    if (*ipv6_list) {
-        printf("Adding IPv6 batch: %s\n", ipv6_list);
-        if (firewall_add_ipv6(ipv6_list) != 0)
+    if (ipv6_list.size) {
+        printf("Adding IPv6 batch: %zu addresses\n", ipv6_list.size);
+        if (firewall_add_ipv6(&ipv6_list) != 0)
             failed = 1;
     }
 
-    if (!*ipv4_list && !*ipv6_list)
+    if (!ipv4_list.size && !ipv6_list.size)
         fprintf(stderr, "No addresses were resolved; no firewall elements added\n");
 
+    address_list_free(&ipv4_list);
+    address_list_free(&ipv6_list);
     if (failed)
         return 1;
     else
